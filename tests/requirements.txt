@@ -1,0 +1,15 @@
+pytest
+httpx
+psycopg2-binary
+dotenv
+boto3
+botocore
+mlflow==2.21.3
+scikit-learn==1.4.2
+requests>=2.31.0,<3
+pandas 
+
+
+
+
+

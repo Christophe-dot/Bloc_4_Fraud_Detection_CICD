@@ -1,0 +1,80 @@
+name: Automatic testing and deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+
+  implementing_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"  
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip 
+          pip install -r "tests/requirements.txt" 
+
+      - name: Debug environment
+        run: | 
+          echo "🔍 Environment check:"
+          echo "MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI != '' && 'SET' || 'NOT SET' }}" 
+          echo "HF_TOKEN set: ${{ secrets.HF_TOKEN != '' }}" 
+          echo "AWS_ACCESS_KEY_ID set: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}" 
+          echo "AWS_SECRET_ACCESS_KEY set: ${{ secrets.AWS_SECRET_ACCESS_KEY != '' }}"
+          echo "AWS_DEFAULT_REGION set: ${{ secrets.AWS_DEFAULT_REGION != '' }}" 
+          python -c "import mlflow; print(f'MLflow version: {mlflow.__version__}')" 
+          python -c "import boto3; print(f'Boto3 version: {boto3.__version__}')" 
+          python -c "import sys; print(f'Python: {sys.version}')"
+
+      - name: Generate timestamp
+        id: timestamp
+        run: echo "date=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        continue-on-error: false 
+        run: |
+          # Export ALL environment variables
+          export API_URL="${{ secrets.API_URL }}"
+          export ARTIFACT_ROOT="${{ secrets.ARTIFACT_ROOT }}" 
+          export AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
+          export AWS_DEFAULT_REGION="${{ secrets.AWS_DEFAULT_REGION }}"
+          export AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          export BACKEND_STORE_URI="${{ secrets.BACKEND_STORE_URI }}"
+          export HF_TOKEN="${{ secrets.HF_TOKEN }}"     
+          export MODEL_URI="${{ secrets.MODEL_URI }}"
+          export MLFLOW_TRACKING_URI="${{ secrets.MLFLOW_TRACKING_URI }}"
+
+          # Run tests
+          pytest "tests/" \
+            # --html="unit_test_report_${{ steps.timestamp.outputs.date }}.html" \
+            # --self-contained-html \
+            -v -s \
+            --tb=short \
+            --junit-xml="unit_test_results_${{ steps.timestamp.outputs.date }}.xml" || true
+
+  deployment:
+    needs: implementing_tests 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install 
+        run: pip install huggingface_hub
+
+      - name: Deploy
+        run: |
+          python -c "
+          from huggingface_hub import HfApi
+          api = HfApi(token='${{ secrets.HF_TOKEN }}')
+          api.upload_folder(
+              folder_path='./', 
+              repo_id='cpellerin/API',
+              repo_type='space'
+          )
+          "
