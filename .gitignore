@@ -4,9 +4,7 @@ data/
 zzz/
 run.sh
 data/
-fastAPI/
-mlflow/
-streamlit/
+
 
 
 
